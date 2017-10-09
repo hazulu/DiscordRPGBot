@@ -5,6 +5,7 @@ const fs = require("fs");
 const pluralize = require('pluralize');
 const table = require('text-table');
 const ordinal = require('ordinal');
+const randomInt = require('random-int');
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -57,11 +58,13 @@ const initializePlayer = (userID) => {
             1: {
                 "name": "sword",
                 "slot": "hands",
+                "damage": "d4",
                 "value": 10
             },
             2: {
                 "name": "dagger",
                 "slot": "hands",
+                "damage": "d4",
                 "value": 20
             }
         },
@@ -126,12 +129,14 @@ const showInfo = (channelID, userID, itemID) => {
             const {
                 name,
                 slot,
-                value,
+                damage,
+                value
             } = item;
 
             const t = table([
                 [ 'Name:', name ],
                 [ 'Slot:', slot ],
+                [ 'Damage Die:', damage ],
                 [ 'Value:', value +' gold' ]
             ]);
 
@@ -200,6 +205,51 @@ const equipItem = (channelID, userID, itemID) => {
         sendMessage("<@!${userID}>, you have no item in that slot!");
 }
 
+const getDamage = (userID, itemID) => {
+
+    const item = players[userID].inventory[itemID];
+
+    if (item) {
+        switch(item.damage) {
+            case 'd4':
+                return randomInt(1, 4);
+                break;
+            case 'd6':
+                return randomInt(1, 6);
+                break;
+            case 'd8':
+                return randomInt(1, 8);
+                break;
+            case 'd10':
+                return randomInt(1, 10);
+                break;
+            case 'd12':
+                return randomInt(1, 12);
+                break;
+            case 'd20':
+                return randomInt(1, 20);
+                break;
+            default:
+                return randomInt(1, 2);
+                break;
+        }
+    }
+}
+
+const testRoll = (channelID, userID) => {
+    const item = players[userID].equipment.hands;
+
+    if (item) {
+        const weapon = players[userID].inventory[item];
+        const damage = getDamage(userID, players[userID].equipment.hands);
+        
+        sendMessage(`You swing your ${weapon.name}! You deal ${damage} damage.`);
+    } else {
+        const damage = randomInt(1, 2);
+        sendMessage(`You flail your arms and deal ${damage} damage!`)
+    }
+}
+
 // setInterval(() => {    
 //     if (!stop) {
 //         if (!spawned) {
@@ -220,6 +270,8 @@ const equipItem = (channelID, userID, itemID) => {
 // }, 60 * 1000); // Check every minute
 
 bot.on('message', (user, userID, channelID, message, evt) => {
+
+    if (channelID !== gameChannelID) return;
 
     if (message.substring(0, 1) === '!') {
         let args = message.substring(1).split(' ');
@@ -249,6 +301,9 @@ bot.on('message', (user, userID, channelID, message, evt) => {
                 break;
             case 'info':
                 showInfo(channelID, userID, parseInt(args[0]));
+                break;
+            case 'attack':
+                testRoll(channelID, userID);
                 break;
             case 'help':
                 sendMessage(`Stfu <@!${userID}>.`, channelID);
