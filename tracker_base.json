@@ -1,0 +1,31 @@
+{
+    "[userid]": {
+        "inventory": {
+            "[item]": {
+                "name": "sword",
+                "slot": "hands",
+                "value": 10
+            }
+        },
+        "pets": {
+            "[pet]": {
+                "name": "Scruffy",
+                "type": "dragon",
+                "weight": 1.0,
+                "hunger": 1.0
+            }
+        },
+        "equipment": {
+            "head": "Hat of destiny",
+            "chest": "Mens breast plate",
+            "legs": "walkin boots",
+            "hand": "stick",
+            "accessory": "pimpin necklace"
+        },
+        "stats": {
+            "health": 100,
+            "experience": 100,
+            "level": 9000
+        }
+    }
+}
