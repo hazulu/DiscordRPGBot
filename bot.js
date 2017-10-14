@@ -6,6 +6,7 @@ const pluralize = require('pluralize');
 const table = require('text-table');
 const ordinal = require('ordinal');
 const randomInt = require('random-int');
+const { playerSchema } = require('./schemas');
 
 // Configure logger settings
 logger.remove(logger.transports.Console);
@@ -28,7 +29,8 @@ bot.on('ready', function () {
 });
 
 // Load tracker
-let players = JSON.parse(fs.readFileSync("./tracker.json", "utf8"));
+const db = fs.readFileSync("./tracker.json", "utf8");
+let players = db ? JSON.parse(db) : {};
 
 // Time vars
 const startTime = new Date(); // Server start time
@@ -36,7 +38,7 @@ const spawnTime = new Date();
 
 spawnTime.setMinutes(startTime.getMinutes() + 2); // 2 minutes after server launch
 
-const gameChannelID = '366308327237615617';
+const gameChannelID = '366308327237615617'; //bot.channels['366308327237615617'].guild_id;
 
 const offset = 1; // Notification will be sent this many minutes before the target time
 let stop = false;
@@ -53,40 +55,23 @@ const updateJSON = () => {
 const sendMessage = (message, channelID=gameChannelID) => bot.sendMessage({ to: channelID, message: `${message}` });
 
 const initializePlayer = (userID) => {
-    const initialData = {
-        "inventory": {
-            1: {
-                "name": "sword",
-                "slot": "hands",
-                "damage": "d4",
-                "value": 10
-            },
-            2: {
-                "name": "dagger",
-                "slot": "hands",
-                "damage": "d4",
-                "value": 20
-            }
-        },
-        "pets": {},
-        "equipment": {
-            "head": 0,
-            "chest": 0,
-            "legs": 0,
-            "hands": 1,
-            "accessory": 0
-        },
-        "stats": {
-            "health": 100,
-            "experience": 0,
-            "level": 0
-        }
-    };
+    let player = players[userID];
 
-    if (!players[userID]) 
-        players[userID] = initialData;
+    if (!player) 
+        players[userID] = playerSchema;
 
     updateJSON();
+}
+
+const getItem = (userID, itemName) => {
+    const player = players[userID];
+    const items = player.inventory;
+
+    for (const item in items)
+        if (items[item].name === itemName)
+            return item;
+    
+    return 0;
 }
 
 const showStats = (channelID, userID) => {
@@ -119,59 +104,70 @@ const showInventory = (channelID, userID) => {
     sendMessage(`Inventory for <@!${userID}>\n` + itemMessage, channelID);
 }
 
-const showInfo = (channelID, userID, itemID) => {
-    if (isNaN(itemID))
-        sendMessage(`Undefined item slot.`);
-    else
-    {
-        const item = players[userID].inventory[itemID];
-        if (item) {
-            const {
-                name,
-                slot,
-                damage,
-                value
-            } = item;
+const showInfo = (channelID, userID, args) => {
 
-            const t = table([
-                [ 'Name:', name ],
-                [ 'Slot:', slot ],
-                [ 'Damage Die:', damage ],
-                [ 'Value:', value +' gold' ]
-            ]);
-
-            sendMessage(`<@!${userID}>\nYour ${ordinal(itemID)} slot contains:\n` + t, channelID);            
-        }
-        else   
-            sendMessage("You have no item in that slot!", channelID);
+    if (!args[0]) {
+        sendMessage(`Usage: \`!info [item slot or item name]\`.`, channelID);
+        return;
     }
+
+    let itemID = args[0];
+    const isNum = !isNaN(parseInt(args[0]));
+    const player = players[userID];
+    const items = player.inventory;
+    let itemName = "";
+    let message = "";
+
+    if (!isNum) {
+        itemName = args.join(" ");
+        itemID = getItem(userID, itemName);
+    }
+
+    if (!items[itemID]) {
+        message = isNum ? `<@!${userID}>, you have no item in that slot.` : `<@!${userID}>, you have no item named \`${itemName}\``;
+        sendMessage(message, channelID);
+        return;
+    }
+
+    const item = items[itemID];
+    itemName = item.name;
+
+    let tableData = [];
+
+    for (const attribute in item) {
+        tableData.push([
+            `${attribute} : `, 
+            item[attribute]
+        ]);
+    }
+    
+    const itemInfo = table(tableData);
+    
+    sendMessage(`<@!${userID}>\nInfo for :\n` + itemInfo, channelID);
 }
 
 const showEquipment = (channelID, userID) => {
-
     const items = players[userID].inventory;
+    const equipment = players[userID].equipment;
+    let tableData = [];
 
-    const {
-        head,
-        chest,
-        legs,
-        hands,
-        accessory
-    } = players[userID].equipment;
+    for (const equip in equipment) {
+        const slotName = equip.charAt(0).toUpperCase() + equip.slice(1);
+        const equipName = equipment[equip] > 0 ? items[equipment[equip]].name : ' ';
 
-    const t = table([
-        [ 'Head:', (head > 0 ? items[head].name : ` `) ],
-        [ 'Chest:', (chest > 0 ? items[chest].name : ` `) ],
-        [ 'Legs:', (legs > 0 ? items[legs].name : ` `) ],
-        [ 'Hands:', (hands > 0 ? items[hands].name : ` `) ],
-        [ 'Accessory:', (accessory > 0 ? items[accessory].name : ` `) ]
-    ]);
+        tableData.push([
+            `${slotName} : `, 
+            equipName
+        ]);
+    }
+    
+    const equipmentTable = table(tableData);
 
-    sendMessage(`Equipment for <@!${userID}>\n` + t, channelID);
+    sendMessage(`Equipment for <@!${userID}>\n` + equipmentTable, channelID);
 }
 
+// TODO: new implementation
 const unEquipItem = (channelID, userID, equipSpot) => {
-
     const equipment = players[userID].equipment;
 
     if (isNaN(equipment[equipSpot])) return;
@@ -185,68 +181,57 @@ const unEquipItem = (channelID, userID, equipSpot) => {
     sendMessage(`<@!${userID}>, you have unequipped your ${old.name}`, channelID);
 }
 
-const equipItem = (channelID, userID, itemID) => {
-    if (isNaN(itemID))
-        sendMessage("Undefined item slot.\n`Name integration coming soon.`");
+const equipItem = (channelID, userID, args) => {
 
-    const item = players[userID].inventory[itemID];
-
-    if (item) {
-        const {
-            name,
-            slot,
-        } = item;
-
-        players[userID].equipment[slot] = itemID;
-
-        sendMessage(`<@!${userID}>, you have equipped your ${name}.\n`, channelID);            
+    if (!args[0]) {
+        sendMessage(`Usage: \`!equip [item slot or item name]\`.`, channelID);
+        return;
     }
-    else   
-        sendMessage("<@!${userID}>, you have no item in that slot!");
+
+    let itemID = args[0];    
+    const isNum = !isNaN(parseInt(itemID));
+    const player = players[userID];
+    const items = player.inventory;
+    const itemName = args.join(" ");
+
+    if (!isNum) {
+        itemID = getItem(userID, itemName);
+    }
+
+    if (!items[itemID]) {
+        let message = isNum ? `<@!${userID}>, you have no item in that slot.` : `<@!${userID}>, you have no item named \`${itemName}\``;
+        sendMessage(message, channelID);
+        return;
+    }
+
+    const {
+        name,
+        slot,
+    } = items[itemID];
+
+    player.equipment[slot] = itemID;
+
+    sendMessage(`<@!${userID}>, you have equipped your \`${name}\`.\n`, channelID);
 }
 
 const getDamage = (userID, itemID) => {
-
     const item = players[userID].inventory[itemID];
+    const die = parseInt(item.damage.slice(1));
 
-    if (item) {
-        switch(item.damage) {
-            case 'd4':
-                return randomInt(1, 4);
-                break;
-            case 'd6':
-                return randomInt(1, 6);
-                break;
-            case 'd8':
-                return randomInt(1, 8);
-                break;
-            case 'd10':
-                return randomInt(1, 10);
-                break;
-            case 'd12':
-                return randomInt(1, 12);
-                break;
-            case 'd20':
-                return randomInt(1, 20);
-                break;
-            default:
-                return randomInt(1, 2);
-                break;
-        }
-    }
+    return item ? randomInt(1, die) : randomInt(1, 2);
 }
 
 const testRoll = (channelID, userID) => {
-    const item = players[userID].equipment.hands;
+    const item = players[userID].equipment.weapon;
 
     if (item) {
         const weapon = players[userID].inventory[item];
-        const damage = getDamage(userID, players[userID].equipment.hands);
+        const damage = getDamage(userID, players[userID].equipment.weapon);
         
-        sendMessage(`You swing your ${weapon.name}! You deal ${damage} damage.`);
+        sendMessage(`You swing your ${weapon.name}! You deal ${damage} damage.`, channelID);
     } else {
         const damage = randomInt(1, 2);
-        sendMessage(`You flail your arms and deal ${damage} damage!`)
+        sendMessage(`You flail your arms and deal ${damage} damage!`, channelID);
     }
 }
 
@@ -273,41 +258,28 @@ bot.on('message', (user, userID, channelID, message, evt) => {
 
     if (channelID !== gameChannelID) return;
 
-    if (message.substring(0, 1) === '!') {
-        let args = message.substring(1).split(' ');
-        const cmd = args[0];
-       
-        args = args.splice(1);
+    if (message.substring(0, 1) !== '!') return;
 
-        initializePlayer(userID);
+    let args = message.toLowerCase().substring(1).split(' ');
+    const cmd = args[0];
+    
+    args = args.splice(1);
 
-        switch(cmd) {
-            case 'stats':
-                showStats(channelID, userID);
-                break;
-            case 'items':
-            case 'inventory':
-                showInventory(channelID, userID);
-                break;
-            case 'equipment':
-            case 'equips':
-                showEquipment(channelID, userID);
-                break;
-            case 'equip':
-                equipItem(channelID, userID, parseInt(args[0]));
-                break;
-            case 'unequip':
-                unEquipItem(channelID, userID, args[0].toLowerCase());
-                break;
-            case 'info':
-                showInfo(channelID, userID, parseInt(args[0]));
-                break;
-            case 'attack':
-                testRoll(channelID, userID);
-                break;
-            case 'help':
-                sendMessage(`Stfu <@!${userID}>.`, channelID);
-                break;
-         }
-     }
+    initializePlayer(userID);
+
+    const commands = {
+        'stats': 'showStats',
+        'items': 'showInventory',
+        'inventory': 'showInventory',
+        'equips': 'showEquipment',
+        'equipment': 'showEquipment',
+        'equip': 'equipItem',
+        'unequip': 'unequipItem',
+        'info': 'showInfo',
+        'attack': 'testRoll'
+    }
+
+    if (cmd in commands)
+        eval(`${commands[cmd]}(channelID, userID, args);`);
+
 });
